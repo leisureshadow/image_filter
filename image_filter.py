@@ -412,6 +412,49 @@ class ImageFilterApp:
         self.index += 1
         self.show_image()
 
+    def _ask_overwrite(self, existing_name, new_name):
+        """Show a custom dialog for duplicate filenames. Returns 'overwrite', 'rename', or 'cancel'."""
+        result = {"value": "cancel"}
+        dlg = tk.Toplevel(self.root)
+        dlg.title("File already exists")
+        dlg.configure(bg="#2b2b2b")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        tk.Label(dlg, text=f"'{existing_name}' already exists in destination.",
+                 font=("Segoe UI", 12), fg="white", bg="#2b2b2b",
+                 wraplength=400, justify=tk.LEFT).pack(padx=20, pady=(20, 10))
+
+        btn_frame = tk.Frame(dlg, bg="#2b2b2b")
+        btn_frame.pack(padx=20, pady=(5, 20))
+
+        btn_cfg = {"font": ("Segoe UI", 11), "width": 20, "height": 2,
+                   "relief": "flat", "cursor": "hand2", "bd": 0}
+
+        def pick(val):
+            result["value"] = val
+            dlg.destroy()
+
+        tk.Button(btn_frame, text="Overwrite", bg="#ff4458", fg="white",
+                  activebackground="#cc3646", command=lambda: pick("overwrite"),
+                  **btn_cfg).pack(pady=3)
+        tk.Button(btn_frame, text=f"Save as '{new_name}'", bg="#00d46a", fg="white",
+                  activebackground="#00a854", command=lambda: pick("rename"),
+                  **btn_cfg).pack(pady=3)
+        tk.Button(btn_frame, text="Cancel", bg="#555555", fg="white",
+                  activebackground="#444444", command=lambda: pick("cancel"),
+                  **btn_cfg).pack(pady=3)
+
+        dlg.protocol("WM_DELETE_WINDOW", lambda: pick("cancel"))
+        # Center on parent
+        dlg.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - dlg.winfo_width()) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{x}+{y}")
+        self.root.wait_window(dlg)
+        return result["value"]
+
     def on_save(self):
         if self.index >= len(self.images):
             return
@@ -428,16 +471,10 @@ class ImageFilterApp:
                 counter += 1
                 new_dest = os.path.join(self.dest_folder, f"{name}_{counter}{ext}")
             new_name = os.path.basename(new_dest)
-            answer = messagebox.askyesnocancel(
-                "File already exists",
-                f"'{os.path.basename(src)}' already exists in destination.\n\n"
-                f"Yes = Overwrite existing file\n"
-                f"No = Save as '{new_name}'\n"
-                f"Cancel = Don't save"
-            )
-            if answer is None:  # Cancel
+            answer = self._ask_overwrite(os.path.basename(src), new_name)
+            if answer == "cancel":
                 return
-            elif answer is False:  # No → save with new name
+            elif answer == "rename":
                 dest = new_dest
             # else: Yes → overwrite (keep original dest)
         shutil.copy2(src, dest)
