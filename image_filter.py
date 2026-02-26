@@ -1,9 +1,9 @@
 """
-Image Filter - Tinder-style image viewer
+Image Filter - Gallery-style image browser
 Usage: python image_filter.py <source_folder> <destination_folder>
 
-Browse images one by one. Press Yes (or right arrow / Y) to copy to destination.
-Press No (or left arrow / N) to skip. Press Esc to quit.
+Browse images with Left/Right arrows. Press Save (S key) to copy to destination.
+Press Esc to quit.
 """
 
 import sys
@@ -31,8 +31,8 @@ class ImageFilterApp:
             if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS
         ])
         self.index = 0
-        self.yes_count = 0
-        self.no_count = 0
+        self.save_count = 0
+        self.saved_set = set()
 
         if not self.images:
             messagebox.showerror("Error", f"No images found in:\n{source_folder}")
@@ -71,15 +71,15 @@ class ImageFilterApp:
         btn_style = {"font": ("Segoe UI", 16, "bold"), "width": 12, "height": 2,
                      "relief": "flat", "cursor": "hand2", "bd": 0}
 
-        self.no_btn = tk.Button(self.bottom_frame, text="✗ NO", bg="#ff4458", fg="white",
-                                activebackground="#cc3646", command=self.on_no, **btn_style)
-        self.no_btn.pack(side=tk.LEFT, padx=(50, 20))
+        self.prev_btn = tk.Button(self.bottom_frame, text="◀ PREV", bg="#555555", fg="white",
+                                activebackground="#444444", command=self.on_prev, **btn_style)
+        self.prev_btn.pack(side=tk.LEFT, padx=(50, 20))
 
-        self.undo_btn = tk.Button(self.bottom_frame, text="↩ UNDO", bg="#555555", fg="white",
-                                  activebackground="#444444", command=self.on_undo,
-                                  font=("Segoe UI", 12), width=8, height=2,
+        self.save_btn = tk.Button(self.bottom_frame, text="💾 SAVE", bg="#00d46a", fg="white",
+                                  activebackground="#00a854", command=self.on_save,
+                                  font=("Segoe UI", 14, "bold"), width=10, height=2,
                                   relief="flat", cursor="hand2", bd=0)
-        self.undo_btn.pack(side=tk.LEFT, padx=20)
+        self.save_btn.pack(side=tk.LEFT, padx=20)
 
         self.grid_btn = tk.Button(self.bottom_frame, text="▦ GRID", bg="#555555", fg="white",
                                    activebackground="#444444", command=self.open_grid,
@@ -87,32 +87,25 @@ class ImageFilterApp:
                                    relief="flat", cursor="hand2", bd=0)
         self.grid_btn.pack(side=tk.LEFT, padx=20)
 
-        self.yes_btn= tk.Button(self.bottom_frame, text="✓ YES", bg="#00d46a", fg="white",
-                                 activebackground="#00a854", command=self.on_yes, **btn_style)
-        self.yes_btn.pack(side=tk.RIGHT, padx=(20, 50))
+        self.next_btn = tk.Button(self.bottom_frame, text="NEXT ▶", bg="#555555", fg="white",
+                                activebackground="#444444", command=self.on_next, **btn_style)
+        self.next_btn.pack(side=tk.RIGHT, padx=(20, 50))
 
         # Center buttons
         self.bottom_frame.pack(anchor=tk.CENTER)
 
         # Key bindings
-        root.bind("<Right>", lambda e: self.on_yes())
-        root.bind("<y>", lambda e: self.on_yes())
-        root.bind("<Y>", lambda e: self.on_yes())
-        root.bind("<Left>", lambda e: self.on_no())
-        root.bind("<n>", lambda e: self.on_no())
-        root.bind("<N>", lambda e: self.on_no())
+        root.bind("<Right>", lambda e: self.on_next())
+        root.bind("<Left>", lambda e: self.on_prev())
+        root.bind("<s>", lambda e: self.on_save())
+        root.bind("<S>", lambda e: self.on_save())
         root.bind("<Escape>", lambda e: self.quit_app())
         root.bind("<F11>", lambda e: self.toggle_fullscreen())
         root.bind("<f>", lambda e: self.toggle_fullscreen())
         root.bind("<F>", lambda e: self.toggle_fullscreen())
-        root.bind("<z>", lambda e: self.on_undo())
-        root.bind("<Z>", lambda e: self.on_undo())
         root.bind("<g>", lambda e: self.open_grid())
         root.bind("<G>", lambda e: self.open_grid())
         root.bind("<Configure>", self.on_resize)
-
-        # History for undo
-        self.history = []  # list of (image_path, action, copied_dest_path_or_None)
 
         self.current_photo = None
         self.current_pil_image = None  # Full-res PIL image for zoom
@@ -229,16 +222,7 @@ class ImageFilterApp:
             self.load_image()
 
         if self.index >= len(self.images):
-            self.canvas.delete("all")
-            self._image_item = None
-            self.canvas.create_text(
-                self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
-                text=f"All done!\n\n{self.yes_count} images copied to:\n{self.dest_folder}\n{self.no_count} images skipped",
-                fill="white", font=("Segoe UI", 20), justify=tk.CENTER
-            )
-            self.yes_btn.config(state=tk.DISABLED)
-            self.no_btn.config(state=tk.DISABLED)
-            self.info_label.config(text="Finished!")
+            self.index = max(0, len(self.images) - 1)
             return
 
         # Use pre-rendered fitted image if it matches current canvas size
@@ -261,12 +245,19 @@ class ImageFilterApp:
             self._render(high_quality=False)
             self._schedule_hq_render()
 
+        # Update save button state
+        if self.index in self.saved_set:
+            self.save_btn.config(bg="#00a854", text="✓ SAVED")
+        else:
+            self.save_btn.config(bg="#00d46a", text="💾 SAVE")
+
     def _render_from_fitted(self, fitted_img):
         """Display a pre-rendered fitted image instantly (no resize needed)."""
         filepath = self.images[self.index]
         filename = os.path.basename(filepath)
-        self.info_label.config(text=f"[{self.index + 1}/{len(self.images)}]  {filename}  (100%)")
-        self.stats_label.config(text=f"✓ {self.yes_count}   ✗ {self.no_count}")
+        saved = "  💾" if self.index in self.saved_set else ""
+        self.info_label.config(text=f"[{self.index + 1}/{len(self.images)}]  {filename}{saved}  (100%)")
+        self.stats_label.config(text=f"💾 {self.save_count}")
 
         img = self.current_pil_image
         canvas_w = max(self.canvas.winfo_width(), 400)
@@ -301,8 +292,9 @@ class ImageFilterApp:
         filepath = self.images[self.index]
         filename = os.path.basename(filepath)
         zoom_pct = int(self.zoom_level * 100)
-        self.info_label.config(text=f"[{self.index + 1}/{len(self.images)}]  {filename}  ({zoom_pct}%)")
-        self.stats_label.config(text=f"✓ {self.yes_count}   ✗ {self.no_count}")
+        saved = "  💾" if self.index in self.saved_set else ""
+        self.info_label.config(text=f"[{self.index + 1}/{len(self.images)}]  {filename}{saved}  ({zoom_pct}%)")
+        self.stats_label.config(text=f"💾 {self.save_count}")
 
         img = self.current_pil_image
         canvas_w = max(self.canvas.winfo_width(), 400)
@@ -408,8 +400,22 @@ class ImageFilterApp:
         # Re-trigger preload with new size
         threading.Thread(target=self._preload_next, daemon=True).start()
 
-    def on_yes(self):
+    def on_prev(self):
+        if self.index <= 0:
+            return
+        self.index -= 1
+        self.show_image()
+
+    def on_next(self):
+        if self.index >= len(self.images) - 1:
+            return
+        self.index += 1
+        self.show_image()
+
+    def on_save(self):
         if self.index >= len(self.images):
+            return
+        if self.index in self.saved_set:
             return
         src = self.images[self.index]
         dest = os.path.join(self.dest_folder, os.path.basename(src))
@@ -421,42 +427,22 @@ class ImageFilterApp:
                 dest = os.path.join(self.dest_folder, f"{name}_{counter}{ext}")
                 counter += 1
         shutil.copy2(src, dest)
-        self.history.append((src, "yes", dest))
-        self.yes_count += 1
-        self.index += 1
-        self.show_image()
-
-    def on_no(self):
-        if self.index >= len(self.images):
-            return
-        src = self.images[self.index]
-        self.history.append((src, "no", None))
-        self.no_count += 1
-        self.index += 1
-        self.show_image()
-
-    def on_undo(self):
-        if not self.history:
-            return
-        src, action, dest = self.history.pop()
-        self.index -= 1
-        if action == "yes":
-            self.yes_count -= 1
-            # Remove the copied file
-            if dest and os.path.exists(dest):
-                os.remove(dest)
-        else:
-            self.no_count -= 1
-        self.yes_btn.config(state=tk.NORMAL)
-        self.no_btn.config(state=tk.NORMAL)
-        self.show_image()
+        self.save_count += 1
+        self.saved_set.add(self.index)
+        # Visual feedback
+        self.save_btn.config(bg="#00a854", text="✓ SAVED")
+        self.stats_label.config(text=f"💾 {self.save_count}")
+        # Update info label with saved indicator
+        filename = os.path.basename(src)
+        zoom_pct = int(self.zoom_level * 100)
+        self.info_label.config(text=f"[{self.index + 1}/{len(self.images)}]  {filename}  💾  ({zoom_pct}%)")
 
     def open_grid(self):
         """Open a thumbnail grid window to pick a starting image."""
         ThumbnailGridWindow(self)
 
     def quit_app(self):
-        if messagebox.askyesno("Quit", f"Quit now?\n\n{self.yes_count} copied, {self.no_count} skipped."):
+        if messagebox.askyesno("Quit", f"Quit now?\n\n{self.save_count} images saved."):
             self.root.destroy()
 
 
@@ -723,11 +709,6 @@ class ThumbnailGridWindow:
         if idx < 0 or idx >= self.total:
             return
         self.app.index = idx
-        self.app.history.clear()
-        self.app.yes_count = 0
-        self.app.no_count = 0
-        self.app.yes_btn.config(state=tk.NORMAL)
-        self.app.no_btn.config(state=tk.NORMAL)
         self._on_close()
         self.app.show_image()
 

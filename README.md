@@ -1,6 +1,6 @@
 # Image Filter
 
-A Tinder-style image viewer for quickly sorting through large photo collections. Browse images one by one, and select which ones to keep by copying them to a destination folder.
+A gallery-style image browser for browsing and saving selected photos from large collections. Navigate images freely with arrow keys and save the ones you want to keep.
 
 ## Usage
 
@@ -26,9 +26,9 @@ JPG, JPEG, PNG, BMP, GIF, TIFF, TIF, WebP
 
 | Action | Key / Button |
 |---|---|
-| **Yes** (copy to destination) | `→` Right Arrow / `Y` / YES button |
-| **No** (skip) | `←` Left Arrow / `N` / NO button |
-| **Undo** | `Z` / UNDO button |
+| **Previous image** | `←` Left Arrow / PREV button |
+| **Next image** | `→` Right Arrow / NEXT button |
+| **Save to destination** | `S` / SAVE button |
 | **Thumbnail Grid** | `G` / GRID button |
 | **Fullscreen** | `F` / `F11` |
 | **Zoom In / Out** | Mouse Wheel |
@@ -38,11 +38,11 @@ JPG, JPEG, PNG, BMP, GIF, TIFF, TIF, WebP
 
 ## Features
 
-### Tinder-style Review
-Browse images one at a time. Press Yes to copy the image to your destination folder, or No to skip it. An undo button lets you go back and change your decision.
+### Browse & Save
+Navigate through images freely with Left/Right arrows. Press Save (or `S`) to copy the current image to your destination folder. Saved images are marked with a 💾 indicator.
 
 ### Thumbnail Grid Navigator
-Press `G` to open a scrollable thumbnail grid of all images. The grid uses a virtual canvas so it handles thousands of images without lag. Click any thumbnail to jump directly to that image — useful for resuming a previous session.
+Press `G` to open a scrollable thumbnail grid of all images. The grid uses a virtual canvas so it handles thousands of images without lag. Click any thumbnail to jump directly to that image.
 
 ### Performance Optimizations
 - **Background preloading** — The next few images are decoded and resized in a background thread while you review the current one, so transitions are near-instant.
