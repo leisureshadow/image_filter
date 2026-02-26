@@ -419,13 +419,27 @@ class ImageFilterApp:
             return
         src = self.images[self.index]
         dest = os.path.join(self.dest_folder, os.path.basename(src))
-        # Handle duplicate filenames
+        # Handle duplicate filenames with user prompt
         if os.path.exists(dest):
             name, ext = os.path.splitext(os.path.basename(src))
             counter = 1
-            while os.path.exists(dest):
-                dest = os.path.join(self.dest_folder, f"{name}_{counter}{ext}")
+            new_dest = os.path.join(self.dest_folder, f"{name}_{counter}{ext}")
+            while os.path.exists(new_dest):
                 counter += 1
+                new_dest = os.path.join(self.dest_folder, f"{name}_{counter}{ext}")
+            new_name = os.path.basename(new_dest)
+            answer = messagebox.askyesnocancel(
+                "File already exists",
+                f"'{os.path.basename(src)}' already exists in destination.\n\n"
+                f"Yes = Overwrite existing file\n"
+                f"No = Save as '{new_name}'\n"
+                f"Cancel = Don't save"
+            )
+            if answer is None:  # Cancel
+                return
+            elif answer is False:  # No → save with new name
+                dest = new_dest
+            # else: Yes → overwrite (keep original dest)
         shutil.copy2(src, dest)
         self.save_count += 1
         self.saved_set.add(self.index)
