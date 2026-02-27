@@ -11,7 +11,7 @@ import os
 import shutil
 import tkinter as tk
 from tkinter import messagebox
-from PIL import Image, ImageTk, ImageOps
+from PIL import Image, ImageTk, ImageOps, ImageDraw, ImageFont
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -87,6 +87,26 @@ class ImageFilterApp:
                                    relief="flat", cursor="hand2", bd=0)
         self.grid_btn.pack(side=tk.LEFT, padx=20)
 
+        self.phone_btn = tk.Button(self.bottom_frame, text="📱 PHONE", bg="#555555", fg="white",
+                                    activebackground="#444444", command=self.toggle_phone_mode,
+                                    font=("Segoe UI", 12), width=10, height=2,
+                                    relief="flat", cursor="hand2", bd=0)
+        self.phone_btn.pack(side=tk.LEFT, padx=20)
+
+        self.phone_ratio_names = ["16:9", "4:5", "1:1", "5:4"]
+        self.phone_ratio_values = [16/9, 4/5, 1/1, 5/4]
+        self.phone_ratio_idx = 1  # default 4:5
+
+        self.ratio_btns = []
+        for i, name in enumerate(self.phone_ratio_names):
+            btn = tk.Button(self.bottom_frame, text=name, bg="#555555", fg="white",
+                            activebackground="#444444",
+                            command=lambda idx=i: self.set_phone_ratio(idx),
+                            font=("Segoe UI", 10, "bold"), width=4, height=2,
+                            relief="flat", cursor="hand2", bd=0)
+            btn.pack(side=tk.LEFT, padx=2)
+            self.ratio_btns.append(btn)
+
         self.next_btn = tk.Button(self.bottom_frame, text="NEXT ▶", bg="#555555", fg="white",
                                 activebackground="#444444", command=self.on_next, **btn_style)
         self.next_btn.pack(side=tk.RIGHT, padx=(20, 50))
@@ -105,6 +125,8 @@ class ImageFilterApp:
         root.bind("<F>", lambda e: self.toggle_fullscreen())
         root.bind("<g>", lambda e: self.open_grid())
         root.bind("<G>", lambda e: self.open_grid())
+        root.bind("<p>", lambda e: self.toggle_phone_mode())
+        root.bind("<P>", lambda e: self.toggle_phone_mode())
         root.bind("<Configure>", self.on_resize)
 
         self.current_photo = None
@@ -126,6 +148,7 @@ class ImageFilterApp:
         self._resize_after_id = None
         self._hq_after_id = None  # deferred high-quality render
         self._image_item = None   # canvas image item id
+        self.phone_mode = False
 
         # Zoom & pan bindings
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
@@ -220,6 +243,8 @@ class ImageFilterApp:
     def show_image(self, load=True):
         if load:
             self.load_image()
+            if self.phone_mode:
+                self._auto_select_ratio()
 
         if self.index >= len(self.images):
             self.index = max(0, len(self.images) - 1)
@@ -239,7 +264,9 @@ class ImageFilterApp:
             if abs(fw - expected_w) <= 2 and abs(fh - expected_h) <= 2:
                 use_fitted = True
 
-        if use_fitted:
+        if self.phone_mode:
+            self._render_phone_mode()
+        elif use_fitted:
             self._render_from_fitted(self._prerendered_fitted)
         else:
             self._render(high_quality=False)
@@ -319,6 +346,254 @@ class ImageFilterApp:
             self.canvas.delete("all")
             self._image_item = self.canvas.create_image(cx, cy, image=self.current_photo, anchor=tk.CENTER)
 
+    def _render_phone_mode(self):
+        """Render current image inside an iPhone frame with Instagram-like UI."""
+        if self.current_pil_image is None:
+            return
+
+        canvas_w = max(self.canvas.winfo_width(), 400)
+        canvas_h = max(self.canvas.winfo_height(), 400)
+
+        filepath = self.images[self.index]
+        filename = os.path.basename(filepath)
+        saved = "  💾" if self.index in self.saved_set else ""
+        img = self.current_pil_image
+        zoom_pct = int(self.zoom_level * 100)
+        ratio_name = self.phone_ratio_names[self.phone_ratio_idx]
+        self.info_label.config(
+            text=f"[{self.index + 1}/{len(self.images)}]  {filename}{saved}  📱 iPhone [{ratio_name}]  ({img.width}×{img.height})  ({zoom_pct}%)")
+        self.stats_label.config(text=f"💾 {self.save_count}")
+
+        # iPhone 15 Pro logical dimensions (fixed)
+        PHONE_W, PHONE_H = 393, 852
+        SI = 4  # screen inset from phone edge (logical pts)
+        scr_w_pts = PHONE_W - SI * 2  # usable screen width
+
+        # Chrome heights (logical points)
+        STATUS_H, NAV_H, HEADER_H = 54, 44, 56
+        ACTION_H, CAPTION_H, TAB_H, SAFE_H = 46, 60, 49, 34
+
+        # Image area ratio from user selection
+        post_ratio = self.phone_ratio_values[self.phone_ratio_idx]
+        img_h_pts = scr_w_pts / post_ratio
+
+        phone_aspect = PHONE_W / PHONE_H
+
+        # Fit phone to canvas
+        pad = 30
+        aw, ah = canvas_w - pad * 2, canvas_h - pad * 2
+        if aw / ah > phone_aspect:
+            phone_h = ah
+            phone_w = int(phone_h * phone_aspect)
+        else:
+            phone_w = aw
+            phone_h = int(phone_w / phone_aspect)
+        scale = phone_w / PHONE_W
+
+        # Create composite
+        comp = Image.new("RGB", (canvas_w, canvas_h), (30, 30, 30))
+        draw = ImageDraw.Draw(comp)
+        px = (canvas_w - phone_w) // 2
+        py = (canvas_h - phone_h) // 2
+
+        # Fonts
+        def _font(name, size):
+            try:
+                return ImageFont.truetype(name, max(int(size * scale), 8))
+            except Exception:
+                return ImageFont.load_default()
+
+        f_sm = _font("segoeui.ttf", 11)
+        f_md = _font("segoeui.ttf", 14)
+        f_bd = _font("segoeuib.ttf", 13)
+        f_lg = _font("segoeuib.ttf", 18)
+        f_icon = _font("seguisym.ttf", 22)
+
+        # Light-mode Instagram colors
+        bg = "#FFFFFF"
+        fg = "#000000"
+        fg2 = "#8e8e8e"
+        sep = "#DBDBDB"
+
+        # --- Phone frame ---
+        frame_r = int(50 * scale)
+        bw = max(int(3 * scale), 2)
+        draw.rounded_rectangle(
+            [px - bw, py - bw, px + phone_w + bw, py + phone_h + bw],
+            radius=frame_r + bw, fill="#3a3a3a")
+        draw.rounded_rectangle(
+            [px, py, px + phone_w, py + phone_h],
+            radius=frame_r, fill=fg)
+
+        # Screen area
+        si = max(int(SI * scale), 2)
+        sx, sy = px + si, py + si
+        sw, sh = phone_w - si * 2, phone_h - si * 2
+        scr_r = int(46 * scale)
+        draw.rounded_rectangle(
+            [sx, sy, sx + sw, sy + sh], radius=scr_r, fill=bg)
+
+        # Dynamic Island
+        di_w, di_h = int(126 * scale), int(37 * scale)
+        di_x = px + (phone_w - di_w) // 2
+        di_y = sy + int(12 * scale)
+        draw.rounded_rectangle(
+            [di_x, di_y, di_x + di_w, di_y + di_h],
+            radius=di_h // 2, fill="#1c1c1e")
+
+        # === Top-down layout ===
+        yc = sy
+
+        # --- Status bar ---
+        s_status = int(STATUS_H * scale)
+        draw.text((sx + int(32 * scale), sy + int(16 * scale)),
+                  "9:41", fill=fg, font=f_bd)
+        bat_x = sx + sw - int(38 * scale)
+        bat_y = sy + int(19 * scale)
+        bat_w_px, bat_h_px = int(25 * scale), int(12 * scale)
+        draw.rounded_rectangle(
+            [bat_x, bat_y, bat_x + bat_w_px, bat_y + bat_h_px],
+            radius=max(int(2 * scale), 1), outline=fg, width=1)
+        draw.rounded_rectangle(
+            [bat_x + 2, bat_y + 2, bat_x + int(bat_w_px * 0.7), bat_y + bat_h_px - 2],
+            radius=1, fill="#30d158")
+        draw.rectangle(
+            [bat_x + bat_w_px, bat_y + int(3 * scale),
+             bat_x + bat_w_px + max(int(2 * scale), 1), bat_y + bat_h_px - int(3 * scale)],
+            fill=fg)
+        for i in range(4):
+            bar_h_px = int((3 + i * 3) * scale)
+            bx = sx + sw - int(80 * scale) + int(i * 6 * scale)
+            draw.rectangle(
+                [bx, bat_y + bat_h_px - bar_h_px, bx + int(3 * scale), bat_y + bat_h_px],
+                fill=fg)
+        yc += s_status
+
+        # --- Instagram nav bar ---
+        s_nav = int(NAV_H * scale)
+        draw.text((sx + int(14 * scale), yc + int(10 * scale)),
+                  "Instagram", fill=fg, font=f_lg)
+        draw.text((sx + sw - int(60 * scale), yc + int(8 * scale)),
+                  "♡", fill=fg, font=f_icon)
+        yc += s_nav
+        draw.line([(sx, yc), (sx + sw, yc)], fill=sep, width=1)
+
+        # --- Post header ---
+        s_header = int(HEADER_H * scale)
+        av_r = int(17 * scale)
+        av_cx = sx + int(14 * scale) + av_r
+        av_cy = yc + s_header // 2
+        draw.ellipse([av_cx - av_r - 2, av_cy - av_r - 2,
+                      av_cx + av_r + 2, av_cy + av_r + 2],
+                     outline="#e1306c", width=max(int(2 * scale), 1))
+        draw.ellipse([av_cx - av_r, av_cy - av_r,
+                      av_cx + av_r, av_cy + av_r], fill="#EFEFEF")
+        draw.text((av_cx + av_r + int(10 * scale), yc + int(16 * scale)),
+                  "photographer", fill=fg, font=f_bd)
+        draw.text((sx + sw - int(30 * scale), yc + int(16 * scale)),
+                  "···", fill=fg, font=f_bd)
+        yc += s_header
+
+        # --- Image area ---
+        s_img_h = int(img_h_pts * scale)
+        img_area_w, img_area_h = sw, s_img_h
+
+        # Fit image within area (letterbox if outside Instagram's ratio range)
+        true_ratio = img.width / img.height
+        area_ratio = img_area_w / img_area_h
+        if true_ratio > area_ratio:
+            dw = img_area_w
+            dh = max(int(img_area_w / true_ratio), 1)
+        else:
+            dh = img_area_h
+            dw = max(int(img_area_h * true_ratio), 1)
+
+        if dw < img_area_w or dh < img_area_h:
+            draw.rectangle([sx, yc, sx + img_area_w, yc + img_area_h], fill="#EFEFEF")
+
+        # Apply zoom/pan: render zoomed image into a clipped area
+        zw = max(int(dw * self.zoom_level), 1)
+        zh = max(int(dh * self.zoom_level), 1)
+        zoomed = img.resize((zw, zh), Image.LANCZOS)
+        img_clip = Image.new("RGB", (img_area_w, img_area_h), (239, 239, 239))
+        paste_x = (img_area_w - zw) // 2 + self.pan_x
+        paste_y = (img_area_h - zh) // 2 + self.pan_y
+        img_clip.paste(zoomed, (paste_x, paste_y))
+        comp.paste(img_clip, (sx, yc))
+        yc += s_img_h
+
+        # --- Action bar ---
+        s_action = int(ACTION_H * scale)
+        ay = yc + int(10 * scale)
+        draw.text((sx + int(14 * scale), ay), "♡", fill=fg, font=f_icon)
+        draw.text((sx + int(50 * scale), ay), "◇", fill=fg, font=f_icon)
+        draw.text((sx + int(86 * scale), ay), "▷", fill=fg, font=f_icon)
+        draw.text((sx + sw - int(32 * scale), ay), "☆", fill=fg, font=f_icon)
+        yc += s_action
+
+        # --- Caption ---
+        s_caption = int(CAPTION_H * scale)
+        draw.text((sx + int(14 * scale), yc + int(4 * scale)),
+                  "1,234 likes", fill=fg, font=f_bd)
+        uname = "photographer  "
+        draw.text((sx + int(14 * scale), yc + int(26 * scale)),
+                  uname, fill=fg, font=f_bd)
+        try:
+            uw = draw.textlength(uname, font=f_bd)
+        except AttributeError:
+            uw = len(uname) * int(7 * scale)
+        caption_text = os.path.splitext(filename)[0][:30]
+        draw.text((sx + int(14 * scale) + int(uw), yc + int(26 * scale)),
+                  caption_text, fill=fg2, font=f_md)
+        yc += s_caption
+
+        # --- Bottom tab bar ---
+        draw.line([(sx, yc), (sx + sw, yc)], fill=sep, width=1)
+        s_tab = int(TAB_H * scale)
+        tab_icons = ["⌂", "○", "+", "▶", "●"]
+        tab_w_each = sw // 5
+        tab_ty = yc + int(14 * scale)
+        for i, icon in enumerate(tab_icons):
+            tx = sx + tab_w_each * i + tab_w_each // 2 - int(6 * scale)
+            draw.text((tx, tab_ty), icon, fill=fg, font=f_icon)
+
+        # --- Bezel clip mask (covers content overflow for tall ratios like 9:16) ---
+        bezel_mask = Image.new("L", (canvas_w, canvas_h), 0)
+        bezel_draw = ImageDraw.Draw(bezel_mask)
+        bezel_draw.rounded_rectangle(
+            [px, py, px + phone_w, py + phone_h], radius=frame_r, fill=255)
+        bezel_draw.rounded_rectangle(
+            [sx, sy, sx + sw, sy + sh], radius=scr_r, fill=0)
+        comp.paste(Image.new("RGB", (canvas_w, canvas_h), (0, 0, 0)), mask=bezel_mask)
+
+        # --- Home indicator (drawn after bezel mask) ---
+        hi_w = int(134 * scale)
+        hi_h = max(int(5 * scale), 3)
+        hi_x = px + (phone_w - hi_w) // 2
+        hi_y = py + phone_h - int(18 * scale)
+        draw.rounded_rectangle(
+            [hi_x, hi_y, hi_x + hi_w, hi_y + hi_h],
+            radius=hi_h // 2, fill="#999999")
+
+        # --- Size info below phone ---
+        ratio_name = self.phone_ratio_names[self.phone_ratio_idx]
+        disp_w_pts = int(dw / scale)
+        disp_h_pts = int(dh / scale)
+        size_info = (f"iPhone 15 Pro  [{ratio_name}]  ·  {img.width}×{img.height}  →  "
+                     f"{disp_w_pts}×{disp_h_pts}pt  ({disp_w_pts * 3}×{disp_h_pts * 3}px @3x)")
+        try:
+            tw = draw.textlength(size_info, font=f_sm)
+        except AttributeError:
+            tw = len(size_info) * int(6 * scale)
+        draw.text(((canvas_w - int(tw)) // 2, py + phone_h + bw + int(12 * scale)),
+                  size_info, fill="#888888", font=f_sm)
+
+        # Display composite (phone frame is fixed; zoom/pan affects image only)
+        self.current_photo = ImageTk.PhotoImage(comp)
+        self.canvas.delete("all")
+        self._image_item = self.canvas.create_image(
+            canvas_w // 2, canvas_h // 2, image=self.current_photo, anchor=tk.CENTER)
+
     def _schedule_hq_render(self):
         """Schedule a high-quality render after interaction stops."""
         if self._hq_after_id:
@@ -327,6 +602,9 @@ class ImageFilterApp:
 
     def render_image(self):
         """Fast re-render for zoom/pan, then schedule HQ."""
+        if self.phone_mode:
+            self._render_phone_mode()
+            return
         self._render(high_quality=False)
         self._schedule_hq_render()
 
@@ -357,14 +635,62 @@ class ImageFilterApp:
         self._drag_start = (event.x, event.y)
         self.pan_x += dx
         self.pan_y += dy
-        # Just move the canvas item — no re-render needed
-        self.canvas.move(self._image_item, dx, dy)
+        if self.phone_mode:
+            self._render_phone_mode()
+        else:
+            # Just move the canvas item — no re-render needed
+            self.canvas.move(self._image_item, dx, dy)
 
     def reset_zoom(self):
         self.zoom_level = 1.0
         self.pan_x = 0
         self.pan_y = 0
         self.render_image()
+
+    def toggle_phone_mode(self):
+        """Toggle iPhone preview mode with Instagram-like UI."""
+        self.phone_mode = not self.phone_mode
+        if self.phone_mode:
+            self.phone_btn.config(bg="#007AFF", text="📱 PHONE ✓")
+            self.zoom_level = 1.0
+            self.pan_x = 0
+            self.pan_y = 0
+            self._auto_select_ratio()
+        else:
+            self.phone_btn.config(bg="#555555", text="📱 PHONE")
+            self._update_ratio_btns()
+        self.show_image(load=False)
+
+    def _auto_select_ratio(self):
+        """Auto-select phone ratio based on image orientation."""
+        if self.current_pil_image is None:
+            return
+        ratio = self.current_pil_image.width / self.current_pil_image.height
+        if ratio >= 1.0:
+            self.phone_ratio_idx = 3  # 5:4 for landscape
+        else:
+            self.phone_ratio_idx = 1  # 4:5 for portrait
+        self._update_ratio_btns()
+
+    def _update_ratio_btns(self):
+        """Highlight the active ratio button."""
+        for i, btn in enumerate(self.ratio_btns):
+            if self.phone_mode and i == self.phone_ratio_idx:
+                btn.config(bg="#007AFF")
+            else:
+                btn.config(bg="#555555")
+
+    def set_phone_ratio(self, idx):
+        """Set a specific aspect ratio. Activates phone mode if not already on."""
+        if not self.phone_mode:
+            self.phone_mode = True
+            self.phone_btn.config(bg="#007AFF", text="📱 PHONE ✓")
+        self.phone_ratio_idx = idx
+        self._update_ratio_btns()
+        self.zoom_level = 1.0
+        self.pan_x = 0
+        self.pan_y = 0
+        self.show_image(load=False)
 
     def toggle_fullscreen(self):
         self.is_fullscreen = not self.is_fullscreen
@@ -396,7 +722,10 @@ class ImageFilterApp:
         cw = max(self.canvas.winfo_width(), 400)
         ch = max(self.canvas.winfo_height(), 400)
         self._preload_canvas_size = (cw, ch)
-        self._render(high_quality=True)
+        if self.phone_mode:
+            self._render_phone_mode()
+        else:
+            self._render(high_quality=True)
         # Re-trigger preload with new size
         threading.Thread(target=self._preload_next, daemon=True).start()
 

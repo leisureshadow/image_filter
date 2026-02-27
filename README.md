@@ -30,6 +30,8 @@ JPG, JPEG, PNG, BMP, GIF, TIFF, TIF, WebP
 | **Next image** | `→` Right Arrow / NEXT button |
 | **Save to destination** | `S` / SAVE button |
 | **Thumbnail Grid** | `G` / GRID button |
+| **Phone Preview** | `P` / PHONE button |
+| **Cycle Aspect Ratio** | `16:9` / `4:5` / `1:1` / `5:4` buttons |
 | **Fullscreen** | `F` / `F11` |
 | **Zoom In / Out** | Mouse Wheel |
 | **Pan** | Click & Drag |
@@ -55,6 +57,9 @@ Scroll to zoom in/out on any image. Click and drag to pan. Double-click or middl
 
 ### Fullscreen Mode
 Press `F` or `F11` to toggle fullscreen. Images automatically refit to the new screen size. All keyboard shortcuts continue to work in fullscreen.
+
+### iPhone Preview Mode
+Press `P` to toggle phone preview mode. The image is displayed inside an iPhone 15 Pro frame with an Instagram-like light-mode UI, including a status bar, post header, action buttons, and bottom tab bar. Four aspect ratio buttons (`16:9`, `4:5`, `1:1`, `5:4`) let you instantly switch layouts — clicking any button also activates phone mode. The ratio auto-selects based on image orientation — portrait images default to 4:5, landscape to 5:4. Below the phone frame, the original image dimensions and effective on-screen size are shown.
 
 ### EXIF Auto-Rotation
 Images are automatically rotated according to their EXIF orientation data.
