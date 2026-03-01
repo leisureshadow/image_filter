@@ -498,18 +498,15 @@ class ImageFilterApp:
         s_img_h = int(img_h_pts * scale)
         img_area_w, img_area_h = sw, s_img_h
 
-        # Fit image within area (letterbox if outside Instagram's ratio range)
+        # Fill image area (cover fit — crop overflow)
         true_ratio = img.width / img.height
         area_ratio = img_area_w / img_area_h
         if true_ratio > area_ratio:
-            dw = img_area_w
-            dh = max(int(img_area_w / true_ratio), 1)
-        else:
             dh = img_area_h
             dw = max(int(img_area_h * true_ratio), 1)
-
-        if dw < img_area_w or dh < img_area_h:
-            draw.rectangle([sx, yc, sx + img_area_w, yc + img_area_h], fill="#EFEFEF")
+        else:
+            dw = img_area_w
+            dh = max(int(img_area_w / true_ratio), 1)
 
         # Apply zoom/pan: render zoomed image into a clipped area
         zw = max(int(dw * self.zoom_level), 1)
