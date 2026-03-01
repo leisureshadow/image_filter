@@ -689,6 +689,62 @@ class ImageFilterApp:
         self.pan_y = 0
         self.show_image(load=False)
 
+    def _get_phone_crop_box(self):
+        """Return (left, top, right, bottom) crop on the original image matching the phone frame."""
+        img = self.current_pil_image
+        if img is None:
+            return None
+
+        W, H = img.width, img.height
+        true_ratio = W / H
+        post_ratio = self.phone_ratio_values[self.phone_ratio_idx]
+
+        # Replicate phone geometry from _render_phone_mode
+        PHONE_W, PHONE_H = 393, 852
+        SI = 4
+        scr_w_pts = PHONE_W - SI * 2
+        img_h_pts = scr_w_pts / post_ratio
+        phone_aspect = PHONE_W / PHONE_H
+
+        canvas_w = max(self.canvas.winfo_width(), 400)
+        canvas_h = max(self.canvas.winfo_height(), 400)
+        pad = 30
+        aw, ah = canvas_w - pad * 2, canvas_h - pad * 2
+        if aw / ah > phone_aspect:
+            phone_h = ah
+            phone_w = int(phone_h * phone_aspect)
+        else:
+            phone_w = aw
+            phone_h = int(phone_w / phone_aspect)
+        scale = phone_w / PHONE_W
+
+        si = max(int(SI * scale), 2)
+        sw = phone_w - si * 2
+        s_img_h = int(img_h_pts * scale)
+        img_area_w, img_area_h = sw, s_img_h
+
+        # Cover fit
+        area_ratio = img_area_w / img_area_h
+        if true_ratio > area_ratio:
+            dh = img_area_h
+            dw = max(int(img_area_h * true_ratio), 1)
+        else:
+            dw = img_area_w
+            dh = max(int(img_area_w / true_ratio), 1)
+
+        zw = max(int(dw * self.zoom_level), 1)
+        zh = max(int(dh * self.zoom_level), 1)
+        paste_x = (img_area_w - zw) // 2 + self.pan_x
+        paste_y = (img_area_h - zh) // 2 + self.pan_y
+
+        # Map visible window back to original image coordinates
+        crop_left = max(0, round(-paste_x * W / zw))
+        crop_top = max(0, round(-paste_y * H / zh))
+        crop_right = min(W, round((img_area_w - paste_x) * W / zw))
+        crop_bottom = min(H, round((img_area_h - paste_y) * H / zh))
+
+        return (crop_left, crop_top, crop_right, crop_bottom)
+
     def toggle_fullscreen(self):
         self.is_fullscreen = not self.is_fullscreen
         self.root.attributes("-fullscreen", self.is_fullscreen)
@@ -803,11 +859,38 @@ class ImageFilterApp:
             elif answer == "rename":
                 dest = new_dest
             # else: Yes → overwrite (keep original dest)
-        shutil.copy2(src, dest)
+        if self.phone_mode and self.current_pil_image:
+            box = self._get_phone_crop_box()
+            if box:
+                cropped = self.current_pil_image.crop(box)
+                ext = os.path.splitext(dest)[1].lower()
+                save_kwargs = {}
+                if ext in ('.jpg', '.jpeg'):
+                    save_kwargs = {'quality': 95, 'subsampling': 0}
+                elif ext == '.webp':
+                    save_kwargs = {'quality': 95}
+                # Preserve EXIF with orientation reset
+                try:
+                    with Image.open(src) as orig:
+                        exif = orig.getexif()
+                        if 0x0112 in exif:
+                            exif[0x0112] = 1  # Normal orientation
+                        exif_bytes = exif.tobytes()
+                        if exif_bytes:
+                            save_kwargs['exif'] = exif_bytes
+                except Exception:
+                    pass
+                cropped.save(dest, **save_kwargs)
+        else:
+            shutil.copy2(src, dest)
         self.save_count += 1
         self.saved_set.add(self.index)
         # Visual feedback
-        self.save_btn.config(bg="#00a854", text="✓ SAVED")
+        if self.phone_mode:
+            ratio_name = self.phone_ratio_names[self.phone_ratio_idx]
+            self.save_btn.config(bg="#00a854", text=f"✓ CROPPED")
+        else:
+            self.save_btn.config(bg="#00a854", text="✓ SAVED")
         self.stats_label.config(text=f"💾 {self.save_count}")
         # Update info label with saved indicator
         filename = os.path.basename(src)
