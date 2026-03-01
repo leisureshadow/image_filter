@@ -10,7 +10,7 @@ import sys
 import os
 import shutil
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from PIL import Image, ImageTk, ImageOps, ImageDraw, ImageFont
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -1101,14 +1101,104 @@ class ThumbnailGridWindow:
         self.win.destroy()
 
 
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: python image_filter.py <source_folder> <destination_folder>")
-        print("Example: python image_filter.py \"C:\\Photos\\raw\" \"C:\\Photos\\selected\"")
-        sys.exit(1)
+class LauncherApp:
+    """Launcher UI for selecting source and destination folders."""
 
-    source = sys.argv[1]
-    dest = sys.argv[2]
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Image Filter")
+        self.root.configure(bg="#1e1e1e")
+        self.root.resizable(False, False)
+
+        self.source_path = tk.StringVar()
+        self.dest_path = tk.StringVar()
+        self.result = None
+
+        # Center window
+        w, h = 600, 320
+        x = (root.winfo_screenwidth() - w) // 2
+        y = (root.winfo_screenheight() - h) // 2
+        root.geometry(f"{w}x{h}+{x}+{y}")
+
+        label_cfg = {"font": ("Segoe UI", 12), "fg": "white", "bg": "#1e1e1e", "anchor": "w"}
+        entry_cfg = {"font": ("Segoe UI", 11), "bg": "#2d2d2d", "fg": "white",
+                     "insertbackground": "white", "relief": "flat", "bd": 0}
+        browse_cfg = {"font": ("Segoe UI", 10, "bold"), "bg": "#555555", "fg": "white",
+                      "activebackground": "#444444", "relief": "flat", "cursor": "hand2",
+                      "width": 8, "bd": 0}
+
+        # Title
+        tk.Label(root, text="Image Filter", font=("Segoe UI", 20, "bold"),
+                 fg="white", bg="#1e1e1e").pack(pady=(25, 5))
+        tk.Label(root, text="Select folders to get started", font=("Segoe UI", 10),
+                 fg="#aaaaaa", bg="#1e1e1e").pack(pady=(0, 20))
+
+        # Source folder row
+        frame_src = tk.Frame(root, bg="#1e1e1e")
+        frame_src.pack(fill=tk.X, padx=40, pady=(0, 10))
+        tk.Label(frame_src, text="Source Folder", **label_cfg).pack(anchor="w")
+        row_src = tk.Frame(frame_src, bg="#1e1e1e")
+        row_src.pack(fill=tk.X, pady=(4, 0))
+        self.src_entry = tk.Entry(row_src, textvariable=self.source_path, **entry_cfg)
+        self.src_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6, padx=(0, 8))
+        tk.Button(row_src, text="Browse", command=self._browse_source, **browse_cfg).pack(side=tk.RIGHT)
+
+        # Destination folder row
+        frame_dst = tk.Frame(root, bg="#1e1e1e")
+        frame_dst.pack(fill=tk.X, padx=40, pady=(0, 20))
+        tk.Label(frame_dst, text="Destination Folder", **label_cfg).pack(anchor="w")
+        row_dst = tk.Frame(frame_dst, bg="#1e1e1e")
+        row_dst.pack(fill=tk.X, pady=(4, 0))
+        self.dst_entry = tk.Entry(row_dst, textvariable=self.dest_path, **entry_cfg)
+        self.dst_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6, padx=(0, 8))
+        tk.Button(row_dst, text="Browse", command=self._browse_dest, **browse_cfg).pack(side=tk.RIGHT)
+
+        # Next button
+        self.next_btn = tk.Button(root, text="Next  ▶", font=("Segoe UI", 14, "bold"),
+                                  bg="#00d46a", fg="white", activebackground="#00a854",
+                                  relief="flat", cursor="hand2", bd=0, width=12,
+                                  command=self._on_next)
+        self.next_btn.pack(pady=(5, 0))
+
+        self.root.bind("<Return>", lambda e: self._on_next())
+
+    def _browse_source(self):
+        path = filedialog.askdirectory(title="Select Source Folder")
+        if path:
+            self.source_path.set(path)
+
+    def _browse_dest(self):
+        path = filedialog.askdirectory(title="Select Destination Folder")
+        if path:
+            self.dest_path.set(path)
+
+    def _on_next(self):
+        src = self.source_path.get().strip()
+        dst = self.dest_path.get().strip()
+        if not src:
+            messagebox.showwarning("Missing Path", "Please select a source folder.")
+            return
+        if not os.path.isdir(src):
+            messagebox.showerror("Invalid Path", f"Source folder does not exist:\n{src}")
+            return
+        if not dst:
+            messagebox.showwarning("Missing Path", "Please select a destination folder.")
+            return
+        self.result = (src, dst)
+        self.root.destroy()
+
+
+def main():
+    if len(sys.argv) == 3:
+        source = sys.argv[1]
+        dest = sys.argv[2]
+    else:
+        launcher = tk.Tk()
+        app = LauncherApp(launcher)
+        launcher.mainloop()
+        if not app.result:
+            sys.exit(0)
+        source, dest = app.result
 
     if not os.path.isdir(source):
         print(f"Error: Source folder does not exist: {source}")
